@@ -57,6 +57,7 @@ def load_calib_json_data(json_path, print_values=False):
 
 def load_ply(ply_path):
     pcd = o3d.io.read_point_cloud(ply_path)
+    # pcd = pcd.voxel_down_sample(voxel_size=0.05)
     pcd_np = np.asarray(pcd.points)
     print("Point cloud loaded successfully, shape:", pcd_np.shape)
     return pcd_np
@@ -89,97 +90,117 @@ def quaternion_to_rotation_matrix(Q):
     return R
 
 
+import numpy as np
+
+
+def equirectangular_projection_batch(intrinsic, points_3d):
+    """
+    Projects multiple 3D points into equirectangular coordinates.
+
+    Args:
+        intrinsic (list or np.ndarray): Intrinsic parameters [width, height].
+        points_3d (np.ndarray): An array of 3D points with shape (n, 3).
+
+    Returns:
+        np.ndarray: An array of 2D points in equirectangular projection with shape (n, 2).
+    """
+    # Ensure points_3d is a numpy array
+    points_3d = np.asarray(points_3d)
+
+    # Compute squared norms for all points
+    squared_norms = np.sum(points_3d ** 2, axis=1)
+
+    # Handle points with very small norms (near the origin)
+    near_origin_mask = squared_norms < 1e-3
+    default_coords = np.array([intrinsic[0] / 2, intrinsic[1] / 2])
+
+    # Normalize points to calculate bearing
+    bearings = points_3d / np.linalg.norm(points_3d, axis=1, keepdims=True)
+
+    # Compute latitude and longitude
+    lat = -np.arcsin(bearings[:, 1])  # y-component
+    lon = np.arctan2(bearings[:, 0], bearings[:, 2])  # x/z components
+
+    # Compute equirectangular coordinates
+    x = intrinsic[0] * (0.5 + lon / (2.0 * np.pi))
+    y = intrinsic[1] * (0.5 - lat / np.pi)
+
+    # Combine x and y into final output
+    projected_points = np.stack([x, y], axis=1)
+
+    # Replace points near origin with default coordinates
+    projected_points[near_origin_mask] = default_coords
+
+    return projected_points
+
+
+import numpy as np
+
+
 def project_points_to_image(points, T_lidar_camera, image_shape):
     """
-    Projects 3D LiDAR points onto the 2D image using the transformation matrix and camera intrinsics.
+    Projects 3D LiDAR points onto the 2D image using the transformation matrix and equirectangular projection.
     Args:
         points: List of 3D points [x, y, z].
         T_lidar_camera: Transformation matrix from LiDAR to camera frame, TUM format.
-        camera_intrinsics: Camera intrinsic parameters.
-        image_shape: Shape of the target image (height, width).
+        image_shape: Shape of the target image [width, height].
     Returns:
-        List of 2D image points and valid points in the image bounds with colored depth.
+        List of 2D image points, normalized depths, and valid points in the image bounds.
     """
-    print("input T_lidar_camera: ", T_lidar_camera)
+    print("Input T_lidar_camera: ", T_lidar_camera)
 
     # Prepare the transformation matrix
-    T = np.array(T_lidar_camera)    # TUM [tx ty tz qx qy qz qw]
-    R_quat_vec = T[3:]                       # Quaternion [qx qy qz qw]
-    t_vec = T[:3]                       # Translation [tx ty tz]
-    # We need to convert the quaternion to rotation matrix
+    T = np.array(T_lidar_camera)  # TUM [tx ty tz qx qy qz qw]
+    R_quat_vec = T[3:]  # Quaternion [qx qy qz qw]
+    t_vec = T[:3]  # Translation [tx ty tz]
+
+    # Convert quaternion to rotation matrix
     R_mat = quaternion_to_rotation_matrix(R_quat_vec)
-    t = t_vec
     T_l_2_c = np.eye(4)
     T_l_2_c[:3, :3] = R_mat
-    T_l_2_c[:3, 3] = t
+    T_l_2_c[:3, 3] = t_vec
+
     print("T_l_2_c: ", T_l_2_c)
 
+    # Invert transformation matrix for camera-to-LiDAR transformation
     T_camera_lidar = invert_transform_matrix(T_l_2_c)
-    # T_camera_lidar = T_l_2_c
     print("T_camera_lidar: ", T_camera_lidar)
 
+    # Prepare 3D points (add a 1 for homogeneous coordinates)
     points = np.array(points)
     points = np.hstack([points, np.ones((points.shape[0], 1))])
-    # points = np.dot(T_camera_lidar, points.T).T
 
-    points = points[:, :3].astype(np.float64)
+    # Transform points to the camera frame
+    points_camera = (T_camera_lidar @ points.T).T[:, :3]
 
-    # if the points are too far, delete them
-    points = points[points[:, 2] < 100]
+    # Filter points by distance
+    points_camera = points_camera[points_camera[:, 2] < 100]
 
-    # visualize the transformed points
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(points)
-    axis = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1.0, origin=[0, 0, 0])
-    # o3d.visualization.draw_geometries([pcd, axis])
+    # Use image_shape directly for equirectangular intrinsic
+    intrinsic = image_shape  # width, height for equirectangular projection
+    projected_points = equirectangular_projection_batch(intrinsic, points_camera)
 
-    
-    # Equirectangular projection
-    points_2d = np.zeros((points.shape[0], 2))
-    valid_points = []
-    depths = []
-    for i, point in enumerate(points):
-        # calculate the projection
-        x, y, z = point[0], point[1], point[2]
-        depth = np.sqrt(x**2 + y**2 + z**2)
+    # Calculate depths for coloring
+    depths = np.linalg.norm(points_camera, axis=1)
 
-        phi = np.arctan2(x, y) # Longitude, [-pi, pi]
-        theta = np.arcsin(z / depth) # Latitude, [-pi/2, pi/2]
-
-        # Map spherical coordinates to pixel coordinates (opencv)
-        u = (phi / (2 * np.pi) + 0.5) * image_shape[0]
-        v = (0.5 - theta / np.pi) * image_shape[1]
-        
-        # # Combine into pixel coordinates
-        # points_2d[i] = [u, v]
-
-        # distance from the camera
-        depth = np.linalg.norm(point)
-        if depth > 100:
-            depths.append(-1)
-            continue
-
-        # colorize the depth
-        depths.append(depth)
-
-        # Check if the point is within the image bounds
-        if depths[-1] == -1:
-            points_2d[i] = [-1, -1]
-        else:
-            points_2d[i] = [u, v]
-        # points_2d[i] = [x, y]
-        valid_points.append(point)
-        
-    depths = np.array(depths)
-    print("Depth min: ", depths.min(), "Depth max: ", depths.max())
-    depth_range = depths.max() - depths.min()
+    # Normalize depths
     depth_min = depths.min()
-    depths = (depths - depth_min) / depth_range
-    # # plot depth distribution
-    # plt.hist(depths, bins=100)
-    # plt.show()
+    depth_max = depths.max()
+    depths_normalized = (depths - depth_min) / (depth_max - depth_min)
 
-    return points_2d, depths, valid_points
+    print("Depth min: ", depth_min, "Depth max: ", depth_max)
+
+    # Filter valid points within the image bounds
+    valid_indices = (
+            (projected_points[:, 0] >= 0) & (projected_points[:, 0] < image_shape[0]) &  # Width check
+            (projected_points[:, 1] >= 0) & (projected_points[:, 1] < image_shape[1])  # Height check
+    )
+    valid_points = points_camera[valid_indices]
+    valid_projected_points = projected_points[valid_indices]
+    valid_depths = depths_normalized[valid_indices]
+
+    return valid_projected_points, valid_depths, valid_points
+
 
 def visualize_projected_points(image, depths, points_2d):
     """
@@ -189,10 +210,10 @@ def visualize_projected_points(image, depths, points_2d):
         points_2d: The 2D points to visualize on the image.
     """
     plt.figure(figsize=(14, 7))
-    # plt.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    plt.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
     # white background
-    white_image = np.ones_like(image) * 255
-    plt.imshow(white_image)
+    # white_image = np.ones_like(image) * 255
+    # plt.imshow(white_image)
     plt.scatter(points_2d[:, 0], points_2d[:, 1], s=0.1, c=depths, cmap='viridis', alpha=0.3)
     # plt.colorbar(label='Depth')
     # plt.title("Projected 3D Points onto Image")
