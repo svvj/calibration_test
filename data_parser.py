@@ -202,21 +202,18 @@ def project_points_to_image(points, T_lidar_camera, image_shape):
     return valid_projected_points, valid_depths, valid_points
 
 
-def visualize_projected_points(image, depths, points_2d):
+def visualize_projected_points(image, depths, points_2d, save_image=False):
     """
     Visualize the 2D projected points on the image.
     Args:
         image: The target image.
         points_2d: The 2D points to visualize on the image.
     """
-    plt.figure(figsize=(14, 7))
+    plt.figure()
     plt.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-    # white background
-    # white_image = np.ones_like(image) * 255
-    # plt.imshow(white_image)
+
     plt.scatter(points_2d[:, 0], points_2d[:, 1], s=0.1, c=depths, cmap='viridis', alpha=0.3)
     # plt.colorbar(label='Depth')
-    # plt.title("Projected 3D Points onto Image")
     plt.axis("off")
     plt.show()
 
@@ -251,4 +248,4 @@ if __name__ == "__main__":
 
     # Visualize registrated point cloud with grey image
     points_2d, depths, valid_points = project_points_to_image(points, np.array(T_lidar_camera), camera_intrinsics)
-    visualize_projected_points(gray_image, depths, points_2d)
+    visualize_projected_points(gray_image, depths, points_2d, True)
