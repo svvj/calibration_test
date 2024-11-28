@@ -57,9 +57,14 @@ def load_calib_json_data(json_path, print_values=False):
 
 def load_ply(ply_path):
     pcd = o3d.io.read_point_cloud(ply_path)
-    # pcd = pcd.voxel_down_sample(voxel_size=0.05)
+    pcd = pcd.voxel_down_sample(voxel_size=0.05)
     pcd_np = np.asarray(pcd.points)
     print("Point cloud loaded successfully, shape:", pcd_np.shape)
+    
+    # save points to ply
+    sparse_ply_path = ply_path.replace(".ply", "_sparse.ply")
+    o3d.io.write_point_cloud(sparse_ply_path, pcd)
+    print(f"Point cloud saved to {sparse_ply_path}")
     return pcd_np
 
 
@@ -236,9 +241,11 @@ if __name__ == "__main__":
     gray_image = cv2.imread(grayscale_image_path)
 
     # Prepare the point cloud
-    # ply_path = "calibration_outputs/rosbag2_2024_11_11-14_55_01_0.db3.ply"
-    ply_folder_path = "output_pointclouds"
-    ply_files_list = os.listdir(ply_folder_path)
+    # ply_folder_path = "output_pointclouds"
+    # ply_files_list = os.listdir(ply_folder_path)
+
+    ply_folder_path = "calibration_outputs"
+    ply_files_list = ["rosbag2_2024_11_11-14_55_01_0.db3.ply"]
 
     for i, ply_file in enumerate(ply_files_list):
         ply_path = os.path.join(ply_folder_path, ply_file)
