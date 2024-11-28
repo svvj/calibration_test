@@ -1,0 +1,40 @@
+{
+  "camera": {
+    "camera_model": "equirectangular",
+    "distortion_coeffs": [],
+    "intrinsics": [
+      2880.0,
+      1440.0
+    ]
+  },
+  "meta": {
+    "bag_names": [
+      "rosbag2_2024_11_11-14_55_01_0.db3"
+    ],
+    "camera_info_topic": "/camera_info",
+    "data_path": "/tmp/input_bags",
+    "image_topic": "/image",
+    "intensity_channel": "reflectivity",
+    "points_topic": "/ouster/points"
+  },
+  "results": {
+    "T_lidar_camera": [
+      -0.026118648183291,
+      -0.01851014833404919,
+      0.151451000416751,
+      -0.49844815667262127,
+      -0.4875966075093054,
+      0.5063592017100322,
+      0.5073453875799621
+    ],
+    "init_T_lidar_camera_auto": [
+      -0.019725655641844093,
+      -0.010190235924759969,
+      0.1423228565611257,
+      -0.49908265717480066,
+      -0.48847236775549935,
+      0.5051043481717953,
+      0.5071300076948931
+    ]
+  }
+}
