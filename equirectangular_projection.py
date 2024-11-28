@@ -202,20 +202,24 @@ def project_points_to_image(points, T_lidar_camera, image_shape):
     return valid_projected_points, valid_depths, valid_points
 
 
-def visualize_projected_points(image, depths, points_2d, save_image=False):
+def visualize_projected_points(image, depths, points_2d, image_idx=-1):
     """
     Visualize the 2D projected points on the image.
     Args:
         image: The target image.
         points_2d: The 2D points to visualize on the image.
     """
-    plt.figure()
+    plt.figure(figsize=(10, 5))
     plt.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
 
-    plt.scatter(points_2d[:, 0], points_2d[:, 1], s=0.1, c=depths, cmap='viridis', alpha=0.3)
+    plt.scatter(points_2d[:, 0], points_2d[:, 1], s=0.3, c=depths, cmap='viridis', alpha=0.3)
     # plt.colorbar(label='Depth')
     plt.axis("off")
-    plt.show()
+    if image_idx >= 0:
+        plt.savefig(f'output/image_{image_idx}.png', bbox_inches='tight')
+        print(f"Image saved as ./output/image_{image_idx}.png")
+    else:
+        plt.show()
 
 
 # Example usage
@@ -232,20 +236,30 @@ if __name__ == "__main__":
     gray_image = cv2.imread(grayscale_image_path)
 
     # Prepare the point cloud
-    ply_path = "calibration_outputs/rosbag2_2024_11_11-14_55_01_0.db3.ply"
+    # ply_path = "calibration_outputs/rosbag2_2024_11_11-14_55_01_0.db3.ply"
+    ply_folder_path = "output_pointclouds"
+    ply_files_list = os.listdir(ply_folder_path)
 
-    # Prepare the calibration result (Transform matrix)
-    calibration_result_path = "calibration_outputs/calib.json"
-    # read json file
-    bag_name, T_lidar_camera, camera_model, camera_intrinsics = load_calib_json_data(calibration_result_path, False)
+    for i, ply_file in enumerate(ply_files_list):
+        ply_path = os.path.join(ply_folder_path, ply_file)
+            
+        # ply_path = "output_pointclouds/frame_0000.ply"
 
-    points = load_ply(ply_path)
+        # Prepare the calibration result (Transform matrix)
+        calibration_result_path = "calibration_outputs/calib.json"
+        # read json file
+        bag_name, T_lidar_camera, camera_model, camera_intrinsics = load_calib_json_data(calibration_result_path, False)
 
-    # Visulalize point cloud
-    # pcd = o3d.geometry.PointCloud()
-    # pcd.points = o3d.utility.Vector3dVector(points)
-    # o3d.visualization.draw_geometries([pcd])
+        points = load_ply(ply_path)
 
-    # Visualize registrated point cloud with grey image
-    points_2d, depths, valid_points = project_points_to_image(points, np.array(T_lidar_camera), camera_intrinsics)
-    visualize_projected_points(gray_image, depths, points_2d, True)
+        # Visulalize point cloud
+        # pcd = o3d.geometry.PointCloud()
+        # pcd.points = o3d.utility.Vector3dVector(points)
+        # o3d.visualization.draw_geometries([pcd])
+
+        # Visualize registrated point cloud with grey image
+        points_2d, depths, valid_points = project_points_to_image(points, np.array(T_lidar_camera), camera_intrinsics)
+        if len(ply_files_list) > 1:
+            visualize_projected_points(gray_image, depths, points_2d, i)
+        else:
+            visualize_projected_points(gray_image, depths, points_2d)
