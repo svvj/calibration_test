@@ -1,0 +1,11 @@
+name: calib
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.10
+  - numpy
+  - opencv
+  - pip
+  - pip:
+      - open3d
